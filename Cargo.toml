@@ -1,0 +1,24 @@
+[package]
+name = "agentcast"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["MukundaKatta"]
+description = "Structured-output enforcer for LLM responses. Repair + validate + (optional) retry-with-LLM. BYO-LLM, BYO-schema."
+license = "MIT"
+repository = "https://github.com/MukundaKatta/agentcast-rs"
+homepage = "https://github.com/MukundaKatta/agentcast-rs"
+documentation = "https://docs.rs/agentcast"
+readme = "README.md"
+keywords = ["llm", "json", "structured-output", "validation", "agent"]
+categories = ["parser-implementations", "api-bindings"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+jsonschema = { version = "0.30", default-features = false }
+thiserror = "2"
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
