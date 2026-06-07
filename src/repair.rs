@@ -19,10 +19,7 @@ fn strip_fences(s: &str) -> String {
     let trimmed = s.trim();
     if let Some(rest) = trimmed.strip_prefix("```") {
         // Skip optional language tag on first line.
-        let after_lang = rest
-            .splitn(2, '\n')
-            .nth(1)
-            .unwrap_or(rest);
+        let after_lang = rest.split_once('\n').map(|x| x.1).unwrap_or(rest);
         if let Some(end) = after_lang.rfind("```") {
             return after_lang[..end].trim().to_string();
         }
@@ -82,7 +79,13 @@ fn extract_balanced(s: &str) -> String {
 
 fn strip_trailing_commas(s: &str) -> String {
     // Remove `,` followed by optional whitespace then `}` or `]`.
-    let mut out = String::with_capacity(s.len());
+    //
+    // We work at the byte level (ASCII structural characters only live in the
+    // 0x00..=0x7F range), but accumulate into a `Vec<u8>` and decode once at the
+    // end. Pushing individual bytes via `c as char` would re-encode each byte's
+    // codepoint and corrupt multi-byte UTF-8 sequences (e.g. accented letters,
+    // emoji, non-Latin scripts).
+    let mut out: Vec<u8> = Vec::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
     let mut in_string = false;
@@ -90,7 +93,7 @@ fn strip_trailing_commas(s: &str) -> String {
     while i < bytes.len() {
         let c = bytes[i];
         if in_string {
-            out.push(c as char);
+            out.push(c);
             if escape {
                 escape = false;
             } else if c == b'\\' {
@@ -103,14 +106,16 @@ fn strip_trailing_commas(s: &str) -> String {
         }
         if c == b'"' {
             in_string = true;
-            out.push('"');
+            out.push(b'"');
             i += 1;
             continue;
         }
         if c == b',' {
-            // Look ahead past whitespace; if next non-ws is } or ], skip the comma.
+            // Look ahead past ASCII whitespace; if next non-ws is } or ], skip
+            // the comma. Only ASCII bytes are inspected, so non-ASCII content
+            // (always >= 0x80) is treated as a non-whitespace, non-bracket byte.
             let mut j = i + 1;
-            while j < bytes.len() && (bytes[j] as char).is_whitespace() {
+            while j < bytes.len() && bytes[j].is_ascii_whitespace() {
                 j += 1;
             }
             if j < bytes.len() && (bytes[j] == b'}' || bytes[j] == b']') {
@@ -118,10 +123,12 @@ fn strip_trailing_commas(s: &str) -> String {
                 continue;
             }
         }
-        out.push(c as char);
+        out.push(c);
         i += 1;
     }
-    out
+    // `out` only ever drops ASCII commas from valid UTF-8 input, so the result
+    // is always valid UTF-8.
+    String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 #[cfg(test)]
@@ -164,5 +171,25 @@ mod tests {
         let r = repair(s);
         assert!(r.contains("\"outer\""));
         assert!(!r.contains("3,]"));
+    }
+
+    #[test]
+    fn preserves_non_ascii_utf8() {
+        // Multi-byte UTF-8 must survive trailing-comma stripping intact.
+        let s = r#"{"label": "café ☕ 日本語", "n": 1,}"#;
+        let r = repair(s);
+        assert!(r.contains("café ☕ 日本語"), "got: {r}");
+        assert!(!r.contains("1,}"));
+        // And the result must remain valid, parseable JSON.
+        let v: serde_json::Value = serde_json::from_str(&r).unwrap();
+        assert_eq!(v["label"], "café ☕ 日本語");
+    }
+
+    #[test]
+    fn non_ascii_inside_string_with_comma() {
+        // A comma inside a string that also holds multi-byte chars must not be
+        // mistaken for a trailing comma, and the bytes must be preserved.
+        let s = r#"{"text": "naïve, 北京"}"#;
+        assert_eq!(repair(s), s);
     }
 }

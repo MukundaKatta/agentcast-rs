@@ -40,8 +40,8 @@ impl Caster {
     /// Does **not** retry — for that, use [`parse_with_retry`](Self::parse_with_retry).
     pub fn parse(&self, raw: &str) -> Result<Value, CastError> {
         let cleaned = repair(raw);
-        let value: Value = serde_json::from_str(&cleaned)
-            .map_err(|e| CastError::InvalidJson(e.to_string()))?;
+        let value: Value =
+            serde_json::from_str(&cleaned).map_err(|e| CastError::InvalidJson(e.to_string()))?;
         self.validate(&value).map(|_| value)
     }
 
